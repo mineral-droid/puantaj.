@@ -161,6 +161,11 @@ ARCHIVE_DIR = os.path.join(BASE_DIR, "arsiv")
 os.makedirs(DB_DIR, exist_ok=True)
 os.makedirs(ARCHIVE_DIR, exist_ok=True)
 
+# Varsayılan öğrenci listesi.
+# Buraya kendi sabit listenizi yazabilirsiniz, örnek:
+# DEFAULT_STUDENTS = ["Ad Soyad 1", "Ad Soyad 2", ...]
+DEFAULT_STUDENTS: list[str] = []
+
 @st.cache_resource
 def get_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -196,6 +201,22 @@ def get_connection():
         );
         """
     )
+
+    # Eğer öğrenciler tablosu tamamen boş ise, DEFAULT_STUDENTS listesinden doldur.
+    if DEFAULT_STUDENTS:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM students;")
+        count = cur.fetchone()[0]
+        if count == 0:
+            for name in DEFAULT_STUDENTS:
+                n = str(name).strip()
+                if not n:
+                    continue
+                cur.execute(
+                    "INSERT OR IGNORE INTO students (name, active, created_at) VALUES (?, 1, ?);",
+                    (n, datetime.utcnow()),
+                )
+            conn.commit()
     conn.commit()
     return conn
 
@@ -723,26 +744,31 @@ def puantaj_view():
                                 df_local.loc[mask, col_name] = mark_type
                     st.session_state[df_key] = df_local
                     st.success("Günler tabloya işlendi.")
-                    st.experimental_rerun()
+                    st.rerun()
 
     st.markdown("---")
 
-    if st.button("Tamamla ve Kaydet"):
-        try:
-            final_df = st.session_state[df_key]
-            excel_bytes = generate_puantaj_excel(final_df, year, month)
-            save_puantaj_archive(excel_bytes, year, month)
-            st.success("Puantaj arşive kaydedildi. Aşağıdan Excel olarak indirebilirsiniz.")
+    # Her yenilemede güncel tabloyu Excel'e çevir
+    final_df = st.session_state[df_key]
+    excel_bytes = generate_puantaj_excel(final_df, year, month)
+    file_name = f"puantaj_{year}_{month:02d}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
 
-            file_name = f"puantaj_{year}_{month:02d}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-            st.download_button(
-                label="Excel'i İndir",
-                data=excel_bytes,
-                file_name=file_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        except Exception as e:
-            st.error(f"Puantaj oluşturulurken hata oluştu: {e}")
+    col_dl, col_arch = st.columns([1, 1])
+    with col_dl:
+        st.download_button(
+            label="Excel'i İndir",
+            data=excel_bytes,
+            file_name=file_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"download_{year}_{month}",
+        )
+    with col_arch:
+        if st.button("Arşive Kaydet", key=f"archive_{year}_{month}"):
+            try:
+                save_puantaj_archive(excel_bytes, year, month)
+                st.success("Puantaj arşive kaydedildi. Sidebar'daki Geçmiş Puantajlar'dan erişebilirsiniz.")
+            except Exception as e:
+                st.error(f"Puantaj arşive kaydedilirken hata oluştu: {e}")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -878,7 +904,7 @@ def student_management_view():
                 if sid is not None:
                     delete_student(sid)
             st.success("Seçili öğrenciler silindi.")
-            st.experimental_rerun()
+            st.rerun()
 
     st.markdown("---")
     st.markdown("##### Kayıtlı Öğrenciler (Tek Tek Silme)")
@@ -902,7 +928,7 @@ def student_management_view():
             if st.button("Sil", key=f"del_student_{student_id}"):
                 delete_student(student_id)
                 st.warning(f"{name} silindi.")
-                st.experimental_rerun()
+                st.rerun()
 
 # ============================================================
 # UNAPPROVED EKRANI
