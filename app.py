@@ -972,7 +972,19 @@ def main():
             st.caption("Henüz kaydedilmiş puantaj yok.")
         else:
             for arch_id, year, month, file_path, created_at in archives[:10]:
-                label = f"{year}-{month:02d} – {created_at.strftime('%Y-%m-%d %H:%M')}"
+                # created_at bazı ortamlarda string veya None olabilir; güvenli şekilde ele al.
+                if hasattr(created_at, "strftime"):
+                    created_str = created_at.strftime("%Y-%m-%d %H:%M")
+                elif isinstance(created_at, str) and created_at:
+                    created_str = created_at
+                else:
+                    created_str = ""
+
+                if created_str:
+                    label = f"{year}-{month:02d} – {created_str}"
+                else:
+                    label = f"{year}-{month:02d}"
+
                 try:
                     with open(file_path, "rb") as f:
                         data = f.read()
